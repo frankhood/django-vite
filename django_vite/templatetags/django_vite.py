@@ -170,6 +170,159 @@ class DjangoViteAssetLoader:
 
         return "\n".join(tags)
 
+    def generate_vite_asset_js(
+        self,
+        path: str,
+        **kwargs: Dict[str, str],
+    ) -> str:
+        """
+        Generates a <script> tag for this JS/TS asset, a <link> tag for
+        all of its CSS dependencies, and a <link modulepreload>
+        for the js dependencies, as listed in the manifest file
+        (for production only).
+        In development Vite loads all by itself.
+
+        Arguments:
+            path {str} -- Path to a Vite JS/TS asset to include.
+
+        Returns:
+            str -- All tags to import this file in your HTML page.
+
+        Keyword Arguments:
+            **kwargs {Dict[str, str]} -- Adds new attributes to generated
+                script tags.
+
+        Raises:
+            RuntimeError: If cannot find the file path in the
+                manifest (only in production).
+
+        Returns:
+            str -- The <script> tag and all <link> tags to import
+                this asset in your page.
+        """
+
+        if DJANGO_VITE_DEV_MODE:
+            return DjangoViteAssetLoader._generate_script_tag(
+                DjangoViteAssetLoader._generate_vite_server_url(path),
+                {"type": "module", **kwargs},
+            )
+
+        if not self._manifest or path not in self._manifest:
+            raise RuntimeError(
+                f"Cannot find {path} in Vite manifest "
+                f"at {DJANGO_VITE_MANIFEST_PATH}"
+            )
+
+        tags = []
+        manifest_entry = self._manifest[path]
+        scripts_attrs = {"type": "module", "crossorigin": "", **kwargs}
+
+        # Add the script by itself
+        tags.append(
+            DjangoViteAssetLoader._generate_script_tag(
+                DjangoViteAssetLoader._generate_production_server_url(
+                    manifest_entry["file"]
+                ),
+                attrs=scripts_attrs,
+            )
+        )
+
+        # Preload imports
+        preload_attrs = {
+            "type": "text/javascript",
+            "crossorigin": "anonymous",
+            "rel": "modulepreload",
+            "as": "script",
+        }
+
+        for dep in manifest_entry.get("imports", []):
+            dep_manifest_entry = self._manifest[dep]
+            dep_file = dep_manifest_entry["file"]
+            url = DjangoViteAssetLoader._generate_production_server_url(
+                dep_file
+            )
+            tags.append(
+                DjangoViteAssetLoader._generate_preload_tag(
+                    url,
+                    attrs=preload_attrs,
+                )
+            )
+
+        return "\n".join(tags)
+    
+    def generate_vite_asset_css(
+        self,
+        path: str,
+        **kwargs: Dict[str, str],
+    ) -> str:
+        """
+        Generates a <script> tag for this JS/TS asset, a <link> tag for
+        all of its CSS dependencies, and a <link modulepreload>
+        for the js dependencies, as listed in the manifest file
+        (for production only).
+        In development Vite loads all by itself.
+
+        Arguments:
+            path {str} -- Path to a Vite JS/TS asset to include.
+
+        Returns:
+            str -- All tags to import this file in your HTML page.
+
+        Keyword Arguments:
+            **kwargs {Dict[str, str]} -- Adds new attributes to generated
+                script tags.
+
+        Raises:
+            RuntimeError: If cannot find the file path in the
+                manifest (only in production).
+
+        Returns:
+            str -- The <script> tag and all <link> tags to import
+                this asset in your page.
+        """
+
+        if DJANGO_VITE_DEV_MODE:
+            return DjangoViteAssetLoader._generate_script_tag(
+                DjangoViteAssetLoader._generate_vite_server_url(path),
+                {"type": "module", **kwargs},
+            )
+
+        if not self._manifest or path not in self._manifest:
+            raise RuntimeError(
+                f"Cannot find {path} in Vite manifest "
+                f"at {DJANGO_VITE_MANIFEST_PATH}"
+            )
+
+        tags = []
+        manifest_entry = self._manifest[path]
+        scripts_attrs = {"type": "module", "crossorigin": "", **kwargs}
+
+        # Add dependent CSS
+        tags.extend(self._load_css_files_of_asset(path, []))
+
+        # Preload imports
+        preload_attrs = {
+            "type": "text/javascript",
+            "crossorigin": "anonymous",
+            "rel": "modulepreload",
+            "as": "script",
+        }
+
+        for dep in manifest_entry.get("imports", []):
+            dep_manifest_entry = self._manifest[dep]
+            dep_file = dep_manifest_entry["file"]
+            url = DjangoViteAssetLoader._generate_production_server_url(
+                dep_file
+            )
+            tags.append(
+                DjangoViteAssetLoader._generate_preload_tag(
+                    url,
+                    attrs=preload_attrs,
+                )
+            )
+
+        return "\n".join(tags)
+
     def preload_vite_asset(
         self,
         path: str,
@@ -622,6 +775,77 @@ def vite_hmr_client(**kwargs: Dict[str, str]) -> str:
     """
 
     return DjangoViteAssetLoader.generate_vite_ws_client(**kwargs)
+
+@register.simple_tag
+@mark_safe
+def vite_asset_js(
+    path: str,
+    **kwargs: Dict[str, str],
+) -> str:
+    """
+    Generates a <script> tag for this JS/TS asset, a <link> tag for
+    all of its CSS dependencies, and a <link rel="modulepreload">
+    for all js dependencies, as listed in the manifest file
+    In development Vite loads all by itself.
+
+    Arguments:
+        path {str} -- Path to a Vite JS/TS asset to include.
+
+    Returns:
+        str -- All tags to import this file in your HTML page.
+
+    Keyword Arguments:
+        **kwargs {Dict[str, str]} -- Adds new attributes to generated
+            script tags.
+
+    Raises:
+        RuntimeError: If cannot find the file path in the
+            manifest (only in production).
+
+    Returns:
+        str -- The <script> tag and all <link> tags to import this
+            asset in your page.
+    """
+
+    assert path is not None
+
+    return DjangoViteAssetLoader.instance().generate_vite_asset_js(path, **kwargs)
+
+
+@register.simple_tag
+@mark_safe
+def vite_asset_css(
+    path: str,
+    **kwargs: Dict[str, str],
+) -> str:
+    """
+    Generates a <script> tag for this JS/TS asset, a <link> tag for
+    all of its CSS dependencies, and a <link rel="modulepreload">
+    for all js dependencies, as listed in the manifest file
+    In development Vite loads all by itself.
+
+    Arguments:
+        path {str} -- Path to a Vite JS/TS asset to include.
+
+    Returns:
+        str -- All tags to import this file in your HTML page.
+
+    Keyword Arguments:
+        **kwargs {Dict[str, str]} -- Adds new attributes to generated
+            script tags.
+
+    Raises:
+        RuntimeError: If cannot find the file path in the
+            manifest (only in production).
+
+    Returns:
+        str -- The <script> tag and all <link> tags to import this
+            asset in your page.
+    """
+
+    assert path is not None
+
+    return DjangoViteAssetLoader.instance().generate_vite_asset_css(path, **kwargs)
 
 
 @register.simple_tag
